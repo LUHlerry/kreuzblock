@@ -249,6 +249,11 @@ h1{font-size:46px;font-weight:900;letter-spacing:-.02em;line-height:1}
 .kind.bot{background:var(--ink);color:var(--paper)}
 .adds{display:flex;gap:10px}
 .adds .btn{flex:1;height:48px;font-size:15px}
+.lvl{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:12px 10px 10px}
+.lvlh{font-weight:800;font-size:15px;padding:0 4px 8px}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--card2);border-radius:12px;padding:4px}
+.seg button{height:44px;border-radius:9px;font-weight:800;font-size:15px;color:var(--ink2)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .note2{font-size:14px;color:var(--ink2);line-height:1.4;padding:0 4px}
 .win{padding:8px 16px 4px;text-align:center}
 .win .reason{font-size:15px;color:var(--ink2);font-weight:700}
@@ -301,12 +306,12 @@ const Engine = (() => {
   const ways = n => 6 - Math.abs(7 - n);              // Wahrscheinlichkeit einer Summe (x/36)
   const clone = o => JSON.parse(JSON.stringify(o));
 
-  function newPlayer(name, bot) {
-    return { name, bot: !!bot, marks: [0, 1, 2, 3].map(() => Array(11).fill(false)), lock: [false, false, false, false], pen: 0 };
+  function newPlayer(name, bot, level) {
+    return { name, bot: !!bot, level: bot ? (level || 'normal') : undefined, marks: [0, 1, 2, 3].map(() => Array(11).fill(false)), lock: [false, false, false, false], pen: 0 };
   }
   function newGame(list, starter = 0) {
     return {
-      v: 1, players: list.map(p => newPlayer(p.name, p.bot)), starter, active: starter,
+      v: 1, players: list.map(p => newPlayer(p.name, p.bot, p.level)), starter, active: starter,
       phase: 'roll', step: 0, dice: null, closedAtRoll: [false, false, false, false],
       turn: null, pending: {}, rolls: 0, over: null, holder: -1
     };
@@ -440,25 +445,47 @@ const Engine = (() => {
     return arr;
   }
 
-  /* ----- Computergegner: einfache, plausible Strategie -----
-     Ein Kreuz ist etwas wert, übersprungene Felder kosten (wahrscheinliche Zahlen mehr),
-     Schließen lohnt sich, Fehlwürfe werden vermieden. Gegen Spielende wird mutiger gekreuzt. */
+  /* ----- Computergegner in drei Stärken -----
+     Grundidee: Ein Kreuz ist etwas wert (mehr in vollen Reihen), übersprungene Felder kosten
+     (wahrscheinliche Zahlen mehr), Schließen lohnt sich, Fehlwürfe werden vermieden.
+     Gegen Spielende wird mutiger gekreuzt.
+     leicht: achtlos beim Überspringen, nimmt Fehlwürfe eher hin, macht gelegentlich Zufallszüge.
+     schwer: gewichtet Kreuze, volle Reihen und übersprungene Felder je nach Tischgröße anders.
+     Die Werte für "schwer" sind per Simulation gegen einen Durchschnittsspieler eingestellt. */
+  const LEVELS = ['leicht', 'normal', 'schwer'];
+  let botRng = Math.random;
+  // [Grundwert Kreuz, Bonus je Kreuz in der Reihe, Gewicht übersprungener Felder]
+  const SCHWER_BY_SIZE = { 2: [6, 0.8, 1.5], 3: [6, 0.5, 1.1], 4: [8, 0.5, 1.1], 5: [6, 0.5, 0.9] };
   function botCtx(g, pi) {
+    const me = g.players[pi], level = me.level || 'normal';
     const maxPen = Math.max(...g.players.map(p => p.pen));
     const urg = (closedCount(g) >= 1 ? 1 : 0) + (maxPen >= 3 ? 1 : 0);
-    return { cross: 5 + 3 * urg, pen: g.players[pi].pen >= 3 ? 60 : 10 };
+    if (level === 'leicht') return { cross: 3 + 2 * urg, perN: 0.2, skipW: 0.45, lock: 3, pen: me.pen >= 3 ? 25 : 6, noise: 0.3 };
+    if (level === 'schwer') {
+      // Je nach Tischgröße andere Werte (per Simulation gegen Durchschnittsspieler ermittelt)
+      const size = Math.min(5, Math.max(2, g.players.length));
+      const bots = g.players.filter(x => x.bot).length;
+      // Einzelner Computer gegen mehrere Menschen: eigene Werte
+      const [c, n, s] = bots === 1 ? [6, 0.8, size >= 4 ? 0.8 : 1.5] : SCHWER_BY_SIZE[size];
+      return { cross: c + 3 * urg, perN: n, skipW: s, lock: 8, pen: me.pen >= 3 ? 200 : 10 };
+    }
+    return { cross: 5 + 3 * urg, perN: 0.5, skipW: 1, lock: 8, pen: me.pen >= 3 ? 60 : 10 };
   }
   function markUtil(p, r, idx, ctx) {
     let skip = 0;
     for (let k = lastIdx(p, r) + 1; k < idx; k++) skip += ways(numAt(r, k));
-    let u = ctx.cross + 0.5 * crosses(p, r) - skip;
-    if (idx === LAST) u += 8;
+    let u = ctx.cross + ctx.perN * crosses(p, r) - ctx.skipW * skip;
+    if (idx === LAST) u += ctx.lock;
     return u;
   }
   function botPassive(g, pi) {
-    const p = g.players[pi], ctx = botCtx(g, pi);
+    const p = g.players[pi], ctx = botCtx(g, pi), opts = whiteOptions(g, pi);
+    if (ctx.noise && botRng() < ctx.noise) {
+      const o = opts[Math.floor(botRng() * (opts.length + 1))];
+      return o ? { r: o.r, idx: o.idx } : 'none';
+    }
     let best = null, bu = 0;
-    for (const o of whiteOptions(g, pi)) {
+    for (const o of opts) {
       const u = markUtil(p, o.r, o.idx, ctx);
       if (u > bu) { bu = u; best = o; }
     }
@@ -467,7 +494,7 @@ const Engine = (() => {
   function botActivePlan(g) {
     const pi = g.active, p = g.players[pi], ctx = botCtx(g, pi);
     const closedNow = closedRows(g);
-    let best = null;
+    const plans = [];
     for (const w of [null, ...whiteOptions(g, pi)]) {
       const q = clone(p);
       let uw = 0;
@@ -478,10 +505,15 @@ const Engine = (() => {
       for (const c of ends ? [null] : [null, ...colorOptionsFor(g, q, closed)]) {
         let u = uw + (c ? markUtil(q, c.r, c.idx, ctx) : 0);
         if (!w && !c && !ends) u = -ctx.pen;
-        if (!best || u > best.u) best = { white: w, color: c, u };
+        plans.push({ white: w, color: c, u });
       }
     }
-    return best;
+    if (ctx.noise && botRng() < ctx.noise) {
+      const safe = plans.filter(x => x.white || x.color);
+      const pool = safe.length ? safe : plans;
+      return pool[Math.floor(botRng() * pool.length)];
+    }
+    return plans.reduce((a, b) => (b.u > a.u ? b : a));
   }
   function botPlayActive(g) {
     if (g.phase !== 'active' || g.step !== 1) throw new Error('Bot: falsche Phase');
@@ -496,7 +528,7 @@ const Engine = (() => {
     LAST, ROW_NAMES, numAt, idxOf, tri, ways, clone, newGame, crosses, lastIdx, rowCount, rowScore, total,
     closedRows, closedCount, canMark, whiteSum, whiteOptions, colorOptions, colorOptionsFor, passive,
     roll, setPending, undecided, commitOthers, markWhite, skipWhite, markColor, endTurn, ranking,
-    botPassive, botActivePlan, botPlayActive
+    botPassive, botActivePlan, botPlayActive, LEVELS, setBotRng: f => { botRng = f; }
   };
 })();
 if (typeof module !== 'undefined') module.exports = Engine;
@@ -510,6 +542,7 @@ const RN = E.ROW_NAMES;
 const KEY = 'kreuzblock.v1';
 const AV = ['#8A5CF6', '#14A3A3', '#E0599B', '#A0703C', '#5D6E85'];
 const BOTS = ['Willi', 'Klara', 'Ole', 'Frida', 'Bodo'];
+const LEVEL_NAME = { leicht: 'Leicht', normal: 'Normal', schwer: 'Schwer' };
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
 
@@ -521,7 +554,7 @@ function loadStore() {
 let store = loadStore();
 function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
 
-const ui = { screen: store.game ? 'game' : 'home', overlay: null, view: null, confirm: null, onYes: null, timer: null, fresh: new Set(), handDismissed: -1, rolled: false, setup: null };
+const ui = { screen: store.game ? 'game' : 'home', overlay: null, view: null, confirm: null, onYes: null, timer: null, fresh: new Set(), handDismissed: -1, setup: null, level: store.level || 'normal' };
 
 /* ---------- Hilfen ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1009,6 +1042,7 @@ function setupHTML() {
         <button class="btn sec" data-a="add" data-bot="1" ${full ? 'disabled' : ''}>+ Computer</button>
       </div>
       <p class="note2">${note} Bis zu 5 Spieler.</p>
+      ${list.some(p => p.bot) ? `<div class="lvl"><div class="lvlh">Stärke der Computer</div><div class="seg" role="radiogroup" aria-label="Stärke der Computer">${E.LEVELS.map(l => `<button role="radio" aria-checked="${ui.level === l}" class="${ui.level === l ? 'on' : ''}" data-a="level" data-l="${l}">${LEVEL_NAME[l]}</button>`).join('')}</div></div>` : ''}
     </div></div>
     ${bar('', `<button class="btn pri" data-a="start" ${nHum === 0 ? 'disabled' : ''}>Spiel starten</button>`)}
   </div>`;
@@ -1030,7 +1064,7 @@ function activeScreen(g) {
   const pi = g.active, p = g.players[pi];
   let sub, ban, right, left = undoBtn(), valid = [], action = null;
   if (p.bot) {
-    sub = 'Computer ist am Zug';
+    sub = `Computer, ${LEVEL_NAME[p.level || 'normal'].toLowerCase()}`;
     left = g.turn && g.turn.bot && store.undo.length ? undoBtn() : '';
     if (g.phase === 'roll') { ban = banner('', `${esc(p.name)} würfelt gleich …`, 'bot'); right = `<button class="btn pri" disabled>${esc(p.name)} ist dran</button>`; }
     else if (!g.turn.bot) { ban = banner('', `${esc(p.name)} überlegt …`, 'bot'); right = `<button class="btn pri" disabled>${esc(p.name)} ist dran</button>`; }
@@ -1094,7 +1128,7 @@ function tableScreen(g) {
   const s = E.whiteSum(g);
   const cards = E.passive(g).map(pi => {
     const p = g.players[pi];
-    const head = `<header>${avatar(g, pi)}<div class="grow"><div class="nm">${esc(p.name)}</div><div class="tot">${E.total(p)} Punkte, ${p.pen} Fehlwürfe</div></div>`;
+    const head = `<header>${avatar(g, pi)}<div class="grow"><div class="nm">${esc(p.name)}</div><div class="tot">${p.bot ? `Computer, ${LEVEL_NAME[p.level || 'normal'].toLowerCase()}, ` : ''}${E.total(p)} Punkte, ${p.pen} Fehlwürfe</div></div>`;
     const c = g.pending[pi];
     if (p.bot) {
       const txt = c && c !== 'none' ? `kreuzt ${RN[c.r]} ${E.numAt(c.r, c.idx)}` : 'lässt aus';
@@ -1260,7 +1294,7 @@ app.addEventListener('click', e => {
   switch (a) {
     case 'new':
     case 'newgame': {
-      const go = () => { ui.overlay = null; ui.setup = E.clone(g ? g.players.map(p => ({ name: p.name, bot: p.bot })) : (store.setup || defaultSetup())); ui.screen = 'setup'; render(); };
+      const go = () => { ui.overlay = null; ui.level = (g && (g.players.find(p => p.bot) || {}).level) || store.level || 'normal'; ui.setup = E.clone(g ? g.players.map(p => ({ name: p.name, bot: p.bot })) : (store.setup || defaultSetup())); ui.screen = 'setup'; render(); };
       if (g && g.phase !== 'over') return ask('Neues Spiel starten? Das laufende Spiel wird beendet.', 'Neues Spiel', () => { go(); }, true);
       return go();
     }
@@ -1279,6 +1313,7 @@ app.addEventListener('click', e => {
     case 'closeov': ui.overlay = null; return render();
     case 'noconfirm': ui.confirm = null; return render();
     case 'yesconfirm': { const f = ui.onYes; ui.confirm = null; ui.onYes = null; if (f) f(); else render(); return; }
+    case 'level': ui.level = el.dataset.l; return render();
     case 'add': {
       if (ui.setup.length >= 5) return;
       const bot = el.dataset.bot === '1';
@@ -1294,9 +1329,10 @@ app.addEventListener('click', e => {
       return render();
     }
     case 'start': {
-      const list = ui.setup.map((p, i) => ({ name: (p.name || '').trim() || (p.bot ? nextBotName(ui.setup) : `Spieler ${i + 1}`), bot: p.bot }));
+      const list = ui.setup.map((p, i) => ({ name: (p.name || '').trim() || (p.bot ? nextBotName(ui.setup) : `Spieler ${i + 1}`), bot: p.bot, level: p.bot ? ui.level : undefined }));
       if (!list.some(p => !p.bot)) return;
       store.setup = list;
+      store.level = ui.level;
       store.game = E.newGame(list, 0);
       store.game.id = Date.now();
       store.undo = [];
@@ -1306,7 +1342,7 @@ app.addEventListener('click', e => {
       return render();
     }
     case 'again': {
-      const list = g.players.map(p => ({ name: p.name, bot: p.bot }));
+      const list = g.players.map(p => ({ name: p.name, bot: p.bot, level: p.level }));
       store.game = E.newGame(list, ((g.starter || 0) + 1) % list.length);
       store.game.id = Date.now();
       store.undo = [];
