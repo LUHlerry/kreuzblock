@@ -93,8 +93,19 @@ svg{display:block}
 .die.gone{background:transparent;box-shadow:inset 0 0 0 2px var(--line);opacity:.6;display:grid;place-items:center;padding:0}
 .die.gone svg{width:16px;height:16px;fill:var(--ink3)}
 .die.dim{opacity:.35}
-.die.roll{animation:pop .22s ease-out}
-@keyframes pop{0%{transform:scale(.7) rotate(-14deg)}70%{transform:scale(1.06)}100%{transform:none}}
+/* Würfelwurf: fliegt ein, dreht sich, schlägt auf, federt nach */
+.die.rolling{animation:tumble .66s cubic-bezier(.25,.7,.35,1) both;z-index:2}
+@keyframes tumble{
+  0%{transform:translate(var(--tx),-34px) rotate(var(--rz)) scale(.8)}
+  58%{transform:translate(0,-3px) rotate(calc(var(--rz) * .06)) scale(1)}
+  68%{transform:translate(0,1px) scale(1.16,.82)}
+  80%{transform:translate(0,-6px) scale(.95,1.06)}
+  90%{transform:translate(0,0) scale(1.04,.96)}
+  100%{transform:none}}
+.sum,.banner>span:last-child,.opts,.botline{transition:opacity .25s ease-out}
+.rolling .sum,.rolling .banner>span:last-child,.rolling .opts,.rolling .botline{opacity:0}
+.rolling .cell.ok{background:var(--t);color:var(--i);box-shadow:none;animation:none}
+.rolling .sheet,.rolling .cards,.rolling .bar{pointer-events:none}
 .sum{margin-left:auto;height:44px;min-width:52px;padding:0 10px;border-radius:12px;background:var(--ink);color:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
 .sum small{font-size:11px;font-weight:700;opacity:.75;line-height:1}
 .sum b{font-size:21px;font-weight:900;line-height:1.05}
@@ -254,6 +265,24 @@ h1{font-size:46px;font-weight:900;letter-spacing:-.02em;line-height:1}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #toast.bad{background:var(--danger);color:#fff}
 #toast.good{background:var(--ok);color:#fff}
+/* Reihe geschlossen */
+.closefx{position:fixed;inset:0;z-index:30;display:grid;place-items:center;pointer-events:none}
+.cfx{background:var(--c);color:var(--on);border-radius:28px;padding:20px 34px 18px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 20px 60px rgba(0,0,0,.28);animation:stamp 1.7s cubic-bezier(.2,.9,.3,1.15) both}
+.cfx svg{width:56px;height:56px;fill:currentColor;margin-bottom:6px}
+.cfx svg path+path{fill:none;stroke:currentColor;stroke-width:2.2}
+.cfx b{font-size:32px;font-weight:900;line-height:1.05}
+.cfx span{font-size:17px;font-weight:800;opacity:.9}
+@keyframes stamp{0%{transform:scale(2.3) rotate(-14deg);opacity:0}13%{transform:scale(.9) rotate(3deg);opacity:1}21%{transform:scale(1.05) rotate(-1deg)}29%{transform:none}82%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-24px) scale(.94)}}
+.cell.shine{animation:shine .7s ease-out both}
+@keyframes shine{40%{transform:scale(1.1);filter:brightness(1.3) saturate(1.3)}100%{transform:none}}
+/* Fehlwurf */
+.penfx{position:fixed;inset:0;z-index:35;pointer-events:none;display:grid;place-items:center;animation:penflash 1.15s ease-out both}
+.penfx b{font-size:60px;font-weight:900;line-height:1;color:#fff;background:var(--danger);padding:14px 30px;border-radius:26px;box-shadow:0 16px 44px rgba(150,20,10,.35);animation:penrise 1.15s cubic-bezier(.2,.8,.3,1) both}
+@keyframes penflash{0%{box-shadow:inset 0 0 140px 50px rgba(220,50,40,.6)}100%{box-shadow:inset 0 0 140px 50px rgba(220,50,40,0)}}
+@keyframes penrise{0%{transform:scale(.4);opacity:0}25%{transform:scale(1.1);opacity:1}60%{transform:scale(1);opacity:1}100%{transform:translateY(-60px);opacity:0}}
+#app.shake{animation:shake .45s ease-out}
+@keyframes shake{15%{transform:translateX(-9px)}35%{transform:translateX(8px)}55%{transform:translateX(-5px)}75%{transform:translateX(3px)}}
+.confetti{position:fixed;inset:0;width:100%;height:100%;z-index:28;pointer-events:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -523,16 +552,214 @@ function avatar(g, i, big) {
   return `<span class="av${big ? ' big' : ''}" style="background:${avColor(i)}">${esc((name || '?').trim().charAt(0).toUpperCase() || '?')}${p && p.bot ? `<span class="bt">${I.bot}</span>` : ''}</span>`;
 }
 const PIPS = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
-function dieHTML(v, kind, extra) {
+const pipsHTML = v => PIPS[v].map(k => `<i style="grid-area:${Math.ceil(k / 3)}/${(k - 1) % 3 + 1}"></i>`).join('');
+function dieHTML(v, kind, extra, style) {
   const cls = kind === 'w' ? 'die' : `die k k${kind}`;
   if (v == null) return `<div class="${cls} blank ${extra || ''}"></div>`;
-  return `<div class="${cls} ${extra || ''}" role="img" aria-label="${v}">${PIPS[v].map(k => `<i style="grid-area:${Math.ceil(k / 3)}/${(k - 1) % 3 + 1}"></i>`).join('')}</div>`;
+  return `<div class="${cls} ${extra || ''}" data-v="${v}" ${style ? `style="${style}"` : ''} role="img" aria-label="${v}">${pipsHTML(v)}</div>`;
+}
+
+/* ---------- Töne (Web Audio, alles synthetisch erzeugt) ---------- */
+const Sound = (() => {
+  let ctx = null, master = null, noiseBuf = null;
+  function ensure() {
+    if (store.muted) return null;
+    try {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = 0.9;
+        const comp = ctx.createDynamicsCompressor();
+        master.connect(comp);
+        comp.connect(ctx.destination);
+      }
+      if (ctx.state !== 'running') ctx.resume();
+    } catch (e) { return null; }
+    return ctx;
+  }
+  // iOS gibt Ton erst nach einer Berührung frei
+  function unlock() {
+    const c = ensure();
+    if (!c || c.__unlocked) return;
+    const b = c.createBuffer(1, 1, 22050), s = c.createBufferSource();
+    s.buffer = b; s.connect(c.destination); s.start(0);
+    c.__unlocked = true;
+  }
+  function noise(c) {
+    if (!noiseBuf) {
+      noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const s = c.createBufferSource();
+    s.buffer = noiseBuf;
+    return s;
+  }
+  function tone(c, { f = 440, f2 = 0, t = 0, d = 0.15, type = 'sine', v = 0.2, a = 0.006 }) {
+    const o = c.createOscillator(), g = c.createGain(), t0 = c.currentTime + t;
+    o.type = type;
+    o.frequency.setValueAtTime(f, t0);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + d);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(v, t0 + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g); g.connect(master);
+    o.start(t0); o.stop(t0 + d + 0.03);
+  }
+  function hiss(c, { t = 0, d = 0.03, v = 0.2, f = 2000, q = 1, type = 'bandpass' }) {
+    const s = noise(c), fl = c.createBiquadFilter(), g = c.createGain(), t0 = c.currentTime + t;
+    fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+    g.gain.setValueAtTime(v, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    s.connect(fl); fl.connect(g); g.connect(master);
+    s.start(t0, Math.random() * 0.5); s.stop(t0 + d + 0.03);
+  }
+  const play = fn => () => { const c = ensure(); if (c) try { fn(c); } catch (e) {} };
+  return {
+    unlock,
+    // Würfel klappern im Becher
+    roll: play(c => { for (let i = 0; i < 10; i++) hiss(c, { t: i * 0.042 + Math.random() * 0.025, d: 0.022, v: 0.16 + Math.random() * 0.14, f: 1700 + Math.random() * 2600, q: 3 }); }),
+    // dumpfer Aufprall auf dem Tisch
+    land: play(c => { tone(c, { f: 150, f2: 55, d: 0.16, v: 0.4 }); hiss(c, { d: 0.05, v: 0.2, f: 800, q: 0.8 }); hiss(c, { t: 0.08, d: 0.03, v: 0.07, f: 1500, q: 2 }); }),
+    // Stift kratzt ein Kreuz
+    mark: play(c => { hiss(c, { d: 0.055, v: 0.26, f: 4200, q: 0.9 }); hiss(c, { t: 0.075, d: 0.05, v: 0.22, f: 3600, q: 0.9 }); }),
+    pick: play(c => tone(c, { f: 880, d: 0.06, v: 0.09, type: 'triangle' })),
+    undo: play(c => tone(c, { f: 560, f2: 360, d: 0.13, v: 0.12, type: 'triangle' })),
+    close: play(c => {
+      hiss(c, { d: 0.08, v: 0.25, f: 600, q: 0.7 });
+      tone(c, { f: 120, f2: 60, d: 0.18, v: 0.35 });
+      [523, 659, 784, 1047].forEach((f, i) => tone(c, { f, t: 0.1 + i * 0.075, d: 0.32, v: 0.14, type: 'triangle' }));
+      for (let i = 0; i < 6; i++) tone(c, { f: 2000 + Math.random() * 1600, t: 0.4 + i * 0.05, d: 0.08, v: 0.03 });
+    }),
+    penalty: play(c => {
+      tone(c, { f: 196, f2: 150, d: 0.22, v: 0.28, type: 'triangle' });
+      tone(c, { f: 147, f2: 98, t: 0.2, d: 0.45, v: 0.3, type: 'triangle' });
+      hiss(c, { d: 0.1, v: 0.15, f: 300, q: 0.7 });
+    }),
+    win: play(c => {
+      [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(c, { f, t: i * 0.11, d: i === 5 ? 0.7 : 0.18, v: 0.15, type: 'triangle' }));
+      [523, 659, 784].forEach(f => tone(c, { f, t: 0.66, d: 0.9, v: 0.07 }));
+      for (let i = 0; i < 10; i++) hiss(c, { t: 0.1 + i * 0.07, d: 0.02, v: 0.05, f: 6000, q: 2 });
+    }),
+    on: play(c => { tone(c, { f: 660, d: 0.08, v: 0.1, type: 'triangle' }); tone(c, { f: 990, t: 0.08, d: 0.12, v: 0.1, type: 'triangle' }); })
+  };
+})();
+['touchend', 'pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => Sound.unlock(), { passive: true }));
+
+/* ---------- Effekte ---------- */
+const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ROLL_MS = REDUCED ? 0 : 680;
+const rollingNow = () => !!ui.rollFx && performance.now() < ui.rollFx.end;
+// führt fn aus, sobald die Würfel liegen (plus Verzögerung)
+function later(fn, extra = 0) {
+  const wait = ui.rollFx ? Math.max(0, ui.rollFx.end - performance.now()) : 0;
+  if (wait + extra <= 0) fn(); else setTimeout(fn, wait + extra);
+}
+function startRollFx() {
+  if (!ROLL_MS) { ui.rollFx = null; return; }
+  const t0 = performance.now();
+  ui.rollFx = {
+    t0, end: t0 + ROLL_MS,
+    p: Array.from({ length: 6 }, (_, i) => ({ dl: i * 18 + Math.random() * 40, rz: (Math.random() < 0.5 ? -1 : 1) * (180 + Math.random() * 260), tx: (Math.random() - 0.5) * 30 }))
+  };
+  Sound.roll();
+  setTimeout(Sound.land, 430);
+  clearInterval(ui.flicker);
+  ui.flicker = setInterval(() => {
+    const el = performance.now() - t0;
+    document.querySelectorAll('.die.rolling[data-v]').forEach(d => {
+      if (el < 400) d.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6));
+      else d.innerHTML = pipsHTML(+d.dataset.v);
+    });
+    if (el >= 400) clearInterval(ui.flicker);
+  }, 65);
+  setTimeout(() => { app.classList.remove('rolling'); }, ROLL_MS);
+}
+function rollStyle(i) {
+  const f = ui.rollFx;
+  if (!f || !rollingNow()) return null;
+  const p = f.p[i];
+  const off = performance.now() - f.t0;
+  return `--rz:${p.rz.toFixed(0)}deg;--tx:${p.tx.toFixed(0)}px;animation-delay:${(p.dl - off).toFixed(0)}ms`;
+}
+const rowColor = r => getComputedStyle(document.documentElement).getPropertyValue(['--r-c', '--y-c', '--g-c', '--b-c'][r]).trim();
+
+function confetti({ x = 0.5, y = 0.5, angle = -90, spread = 60, speed = 14, count = 120, colors, duration = 3600, gravity = 0.32 } = {}) {
+  if (REDUCED) return;
+  const cv = document.createElement('canvas');
+  cv.className = 'confetti';
+  document.body.appendChild(cv);
+  const dpr = Math.min(2, window.devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+  const cols = colors || [0, 1, 2, 3].map(rowColor);
+  const P = Array.from({ length: count }, () => {
+    const a = (angle + (Math.random() - 0.5) * spread) * Math.PI / 180, s = speed * (0.55 + Math.random() * 0.6);
+    return { x: W * x, y: H * y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, w: 7 + Math.random() * 6, h: 4 + Math.random() * 5,
+      r: Math.random() * 6.3, vr: (Math.random() - 0.5) * 0.35, wob: Math.random() * 6.3, col: cols[Math.floor(Math.random() * cols.length)], round: Math.random() < 0.2 };
+  });
+  const t0 = performance.now();
+  let last = t0;
+  function step(now) {
+    const k = Math.min(3, (now - last) / 16.7), el = now - t0;
+    last = now;
+    c.clearRect(0, 0, W, H);
+    c.globalAlpha = el > duration - 700 ? Math.max(0, (duration - el) / 700) : 1;
+    for (const p of P) {
+      p.vy += gravity * k;
+      p.vx *= Math.pow(0.985, k); p.vy *= Math.pow(0.985, k);
+      if (p.vy > 6) p.vy = 6;
+      p.wob += 0.12 * k; p.r += p.vr * k;
+      p.x += (p.vx + Math.sin(p.wob) * 0.8) * k; p.y += p.vy * k;
+      c.save(); c.translate(p.x, p.y); c.rotate(p.r); c.fillStyle = p.col;
+      if (p.round) { c.beginPath(); c.arc(0, 0, p.h * 0.6, 0, 6.3); c.fill(); }
+      else c.fillRect(-p.w / 2, -p.h / 2 * Math.abs(Math.cos(p.wob)), p.w, p.h * Math.abs(Math.cos(p.wob)) + 0.5);
+      c.restore();
+    }
+    if (el < duration) requestAnimationFrame(step); else cv.remove();
+  }
+  requestAnimationFrame(step);
+}
+function celebrateClose(rows) {
+  rows.forEach((r, k) => later(() => {
+    Sound.close();
+    const el = document.createElement('div');
+    el.className = `closefx k${r}`;
+    el.innerHTML = `<div class="cfx">${I.lock}<b>${RN[r]}</b><span>ist geschlossen</span></div>`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1750);
+    setTimeout(() => confetti({ y: 0.48, spread: 140, speed: 13, count: 70, colors: [rowColor(r), '#FFFFFF', rowColor(r)], duration: 2000 }), 200);
+    document.querySelectorAll(`.sheet .cell.k${r}`).forEach((cell, i) => { cell.style.animationDelay = `${200 + i * 40}ms`; cell.classList.add('shine'); });
+  }, 80 + k * 1100));
+}
+function penaltyFx() {
+  later(() => {
+    Sound.penalty();
+    const el = document.createElement('div');
+    el.className = 'penfx';
+    el.innerHTML = '<b>−5</b>';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
+    if (!REDUCED) { app.classList.remove('shake'); void app.offsetWidth; app.classList.add('shake'); setTimeout(() => app.classList.remove('shake'), 500); }
+  });
+}
+function celebrateWin() {
+  later(() => {
+    Sound.win();
+    confetti({ x: 0.08, y: 1.02, angle: -68, spread: 30, speed: 24, count: 110, duration: 4200 });
+    confetti({ x: 0.92, y: 1.02, angle: -112, spread: 30, speed: 24, count: 110, duration: 4200 });
+    setTimeout(() => confetti({ x: 0.5, y: -0.04, angle: 90, spread: 160, speed: 5, count: 90, duration: 4000, gravity: 0.12 }), 700);
+  }, 250);
 }
 
 /* ---------- Toast ---------- */
 let toastT = null;
 function toast(text, kind) {
   if (!text) return;
+  if (rollingNow()) return later(() => toast(text, kind));
   toastEl.textContent = text;
   toastEl.className = 'show' + (kind ? ' ' + kind : '');
   clearTimeout(toastT);
@@ -556,10 +783,11 @@ function announceClosures(before) {
   const g = G();
   const now = E.closedRows(g);
   const fresh = [0, 1, 2, 3].filter(r => now[r] && !before[r]);
-  if (fresh.length) toast(fresh.map(r => `${RN[r]} ist geschlossen!`).join('\n'), 'good');
+  if (fresh.length) celebrateClose(fresh);
 }
 function undo() {
   if (!store.undo.length) return;
+  Sound.undo();
   store.game = store.undo.pop();
   ui.view = null;
   ui.fresh.clear();
@@ -574,7 +802,7 @@ function doRoll() {
   store.undo = [];
   store.note = '';
   ui.view = null;
-  ui.rolled = true;
+  startRollFx();
   if (!g.players[g.active].bot) g.holder = g.active;
   for (const i of E.passive(g)) if (g.players[i].bot) E.setPending(g, i, E.botPassive(g, i));
   if (!humanPassives(g).length) commitWithNotes();
@@ -596,9 +824,9 @@ function commitWithNotes() {
 function pickPassive(pi, r, idx) {
   const g = G();
   const cur = g.pending[pi];
-  if (r == null) E.setPending(g, pi, 'none');
-  else if (cur && cur !== 'none' && cur.r === r && cur.idx === idx) E.setPending(g, pi, null);
-  else { E.setPending(g, pi, { r, idx }); ui.fresh.add(`${pi}-${r}-${idx}`); }
+  if (r == null) { E.setPending(g, pi, 'none'); Sound.pick(); }
+  else if (cur && cur !== 'none' && cur.r === r && cur.idx === idx) { E.setPending(g, pi, null); Sound.undo(); }
+  else { E.setPending(g, pi, { r, idx }); ui.fresh.add(`${pi}-${r}-${idx}`); Sound.mark(); }
   save();
   render();
 }
@@ -618,7 +846,8 @@ function markCell(r, idx) {
   if (g.phase !== 'active') return;
   const key = `${g.active}-${r}-${idx}`;
   ui.fresh.add(key);
-  if (!act(gg => (gg.step === 1 ? E.markWhite(gg, r, idx) : E.markColor(gg, r, idx)), true)) ui.fresh.delete(key);
+  if (act(gg => (gg.step === 1 ? E.markWhite(gg, r, idx) : E.markColor(gg, r, idx)), true)) Sound.mark();
+  else ui.fresh.delete(key);
 }
 function endTurn(force) {
   const g = G();
@@ -631,6 +860,7 @@ function endTurn(force) {
     if (g.turn.pen) {
       store.note = `${p.name} hat einen Fehlwurf bekommen (${p.pen} von 4).`;
       toast(`Fehlwurf für ${p.name}: −5`, 'bad');
+      penaltyFx();
       save();
     } else store.note = '';
   }
@@ -641,7 +871,7 @@ function botContinue() {
   E.endTurn(g);
   store.undo = [];
   store.note = g.turn.pen ? `${p.name} hat einen Fehlwurf bekommen (${p.pen} von 4).` : '';
-  if (g.turn.pen) toast(`Fehlwurf für ${p.name}: −5`, 'bad');
+  if (g.turn.pen) { toast(`Fehlwurf für ${p.name}: −5`, 'bad'); penaltyFx(); }
   save();
   render();
 }
@@ -661,6 +891,7 @@ function tick() {
       const info = E.botPlayActive(g);
       if (info.white) ui.fresh.add(`${g.active}-${info.white.r}-${info.white.idx}`);
       if (info.color) ui.fresh.add(`${g.active}-${info.color.r}-${info.color.idx}`);
+      if (info.white || info.color) Sound.mark();
       announceClosures(before);
       save();
       render();
@@ -682,13 +913,14 @@ function trayHTML(g, mode) {
   const closed = E.closedRows(g);
   const d = g.dice;
   const step1 = d && (g.phase === 'others' || (g.phase === 'active' && g.step === 1));
-  const anim = ui.rolled ? 'roll' : '';
+  const st = i => (d ? rollStyle(i) : null);
+  const anim = i => (st(i) ? ' rolling' : '');
   let html = '<div class="tray"><div class="dice">';
-  html += dieHTML(d ? d.w[0] : null, 'w', anim) + dieHTML(d ? d.w[1] : null, 'w', anim);
+  html += dieHTML(d ? d.w[0] : null, 'w', anim(0), st(0)) + dieHTML(d ? d.w[1] : null, 'w', anim(1), st(1));
   for (let r = 0; r < 4; r++) {
     const gone = d ? d.c[r] == null || (closed[r] && g.phase === 'active' && g.step >= 2) : closed[r];
     if (gone) html += `<div class="die k k${r} gone" aria-label="${RN[r]} weg">${I.lock}</div>`;
-    else html += dieHTML(d ? d.c[r] : null, r, (step1 ? 'dim ' : '') + anim);
+    else html += dieHTML(d ? d.c[r] : null, r, (step1 ? 'dim' : '') + anim(r + 2), st(r + 2));
   }
   html += '</div>';
   if (step1) html += `<div class="sum"><small>Weiß</small><b>${E.whiteSum(g)}</b></div>`;
@@ -750,6 +982,7 @@ function homeHTML() {
       ${running ? `<button class="btn pri" data-a="resume">Spiel fortsetzen</button>` : ''}
       <button class="btn ${running ? 'sec' : 'pri'}" data-a="new">Neues Spiel</button>
       <button class="btn sec" data-a="rules">Regeln</button>
+      <button class="btn sec" data-a="mute">${store.muted ? 'Ton einschalten' : 'Ton ausschalten'}</button>
     </div>
     ${standalone ? '' : '<p class="foot">Tipp: In Safari auf Teilen tippen und „Zum Home-Bildschirm“ wählen. Dann startet Kreuzblock im Vollbild wie eine App.</p>'}
   </div></div>`;
@@ -962,6 +1195,7 @@ function overlayHTML() {
       <button class="btn sec" data-a="scores">Punktestand</button>
       <button class="btn sec" data-a="rules">Regeln</button>
       <button class="btn sec" data-a="newgame">Neues Spiel</button>
+      <button class="btn sec" data-a="mute">${store.muted ? 'Ton einschalten' : 'Ton ausschalten'}</button>
       <button class="btn sec" data-a="home">Zur Startseite</button></div><p class="hint">Das laufende Spiel bleibt gespeichert.</p>`);
   }
   if (ui.confirm) {
@@ -989,7 +1223,15 @@ function render() {
   else { ui.screen = 'home'; html = homeHTML(); }
   app.innerHTML = html + overlayHTML();
   app.querySelectorAll('[data-keep]').forEach(el => { if (keep[el.dataset.keep] != null) el.scrollTop = keep[el.dataset.keep]; });
-  if (ui.fresh.size || ui.rolled) setTimeout(() => { ui.fresh.clear(); ui.rolled = false; }, 450);
+  app.classList.toggle('rolling', rollingNow());
+  // Während des Wurfs zeigen die Würfel wechselnde Augen
+  if (rollingNow() && performance.now() - ui.rollFx.t0 < 400) app.querySelectorAll('.die.rolling[data-v]').forEach(d => { d.innerHTML = pipsHTML(1 + Math.floor(Math.random() * 6)); });
+  if (ui.fresh.size) setTimeout(() => { ui.fresh.clear(); }, 450);
+  // Siegerbildschirm: einmal pro Partie feiern
+  if (ui.screen === 'game' && g && g.phase === 'over') {
+    const key = (g.id || 'x') + ':' + g.rolls;
+    if (ui.celebrated !== key) { ui.celebrated = key; celebrateWin(); }
+  }
   tick();
 }
 
@@ -1023,6 +1265,12 @@ app.addEventListener('click', e => {
       return go();
     }
     case 'resume': ui.screen = 'game'; return render();
+    case 'mute':
+      store.muted = !store.muted;
+      save();
+      if (!store.muted) Sound.on();
+      toast(store.muted ? 'Ton ist aus' : 'Ton ist an');
+      return render();
     case 'home': ui.overlay = null; ui.screen = 'home'; return render();
     case 'rules': ui.overlay = 'rules'; return render();
     case 'menu': ui.overlay = 'menu'; return render();
@@ -1050,6 +1298,7 @@ app.addEventListener('click', e => {
       if (!list.some(p => !p.bot)) return;
       store.setup = list;
       store.game = E.newGame(list, 0);
+      store.game.id = Date.now();
       store.undo = [];
       store.note = '';
       ui.screen = 'game'; ui.view = null; ui.overlay = null; ui.handDismissed = -1;
@@ -1059,6 +1308,7 @@ app.addEventListener('click', e => {
     case 'again': {
       const list = g.players.map(p => ({ name: p.name, bot: p.bot }));
       store.game = E.newGame(list, ((g.starter || 0) + 1) % list.length);
+      store.game.id = Date.now();
       store.undo = [];
       store.note = '';
       ui.view = null; ui.overlay = null;
@@ -1092,7 +1342,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
 render();
-window.__kb = { store: () => store, ui, E };
+window.__kb = { store: () => store, ui, E, Sound };
 })();
 </script>
 </body>
