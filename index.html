@@ -270,6 +270,35 @@ h1{font-size:46px;font-weight:900;letter-spacing:-.02em;line-height:1}
 #toast.show{opacity:1;transform:translate(-50%,0)}
 #toast.bad{background:var(--danger);color:#fff}
 #toast.good{background:var(--ok);color:#fff}
+/* Tischansicht */
+.tv{position:fixed;inset:0;z-index:12;display:flex;flex-direction:column;padding:var(--st) var(--sr) 0 var(--sl);background-color:var(--paper);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:18px 18px}
+.tv>*{width:100%;max-width:900px;margin-left:auto;margin-right:auto}
+.tv.enter{animation:tvin .3s cubic-bezier(.2,.8,.3,1)}
+@keyframes tvin{from{transform:scale(1.22);opacity:0}}
+.tvback{height:44px;font-size:16px;padding:0 16px;flex:none}
+.tvgrid{flex:1;min-height:0;display:grid;gap:8px;padding:2px 10px max(10px,var(--sb));grid-template-columns:repeat(var(--cols),minmax(0,1fr));grid-template-rows:repeat(var(--rows),minmax(0,1fr))}
+.tb{cursor:pointer;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:6px 6px 7px;display:flex;flex-direction:column;min-height:0;min-width:0;text-align:left}
+.tb.act{box-shadow:0 0 0 2.5px var(--ink),var(--shadow)}
+.tb:active{transform:scale(.985)}
+.tbh{display:flex;align-items:center;gap:6px;min-height:26px;padding:0 2px 5px}
+.tbh .av{width:22px;height:22px;font-size:11px}
+.tbh .av .bt{width:13px;height:13px;right:-4px;bottom:-4px}
+.tbh .av .bt svg{width:9px;height:9px}
+.tbh .tn{flex:1;min-width:0;font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbh .pens{margin:0;gap:2px}
+.tbh .pen{width:6px;height:6px;border-radius:2px}
+.tbh b{font-weight:900;font-size:15px;font-variant-numeric:tabular-nums;min-width:20px;text-align:right}
+.ts{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto repeat(11,minmax(0,1fr));grid-auto-flow:column;gap:2px}
+.tsh{background:var(--c);color:var(--on);border-radius:6px 6px 3px 3px;text-align:center;font-weight:900;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.tsh.closed{opacity:.5}
+.tvgrid.narrow .tbh .av,.tvgrid.narrow .tbh .pens{display:none}
+.tvgrid.narrow .tbh{padding-left:4px}
+.tc{position:relative;min-height:0;border-radius:4px;background:var(--t);color:var(--i);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:var(--tf,11px);font-variant-numeric:tabular-nums;line-height:1}
+.tc.done .n{opacity:.35}
+.tc.lost{opacity:.3}
+.tc.lost::after{content:"";position:absolute;left:22%;right:22%;top:50%;height:1.5px;background:currentColor;transform:rotate(-14deg)}
+.tc.shut{opacity:.35}
+.tc .x path{stroke-width:5.5}
 /* Reihe geschlossen */
 .closefx{position:fixed;inset:0;z-index:30;display:grid;place-items:center;pointer-events:none}
 .cfx{background:var(--c);color:var(--on);border-radius:28px;padding:20px 34px 18px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 20px 60px rgba(0,0,0,.28);animation:stamp 1.7s cubic-bezier(.2,.9,.3,1.15) both}
@@ -565,6 +594,8 @@ const avColor = i => AV[i % AV.length];
 
 const I = {
   menu: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  table: '<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.8"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.8"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.8"/></svg>',
+  zoomin: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20 20M10.5 7.8v5.4M7.8 10.5h5.4"/></svg>',
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7"/><path d="M12 17.2v.1"/></svg>',
   undo: '<svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -935,11 +966,12 @@ function tick() {
 /* ---------- Bausteine ---------- */
 function topBar(g, pi, sub) {
   const p = g.players[pi];
+  ui.tvLastPi = pi;
   return `<div class="top">
     <button class="ib" data-a="menu" aria-label="Menü">${I.menu}</button>
     <div class="who">${avatar(g, pi)}<div><div class="nm">${esc(p.name)}</div><div class="sub">${sub}</div></div></div>
     <button class="pill" data-a="scores" aria-label="Punktestand aller Spieler"><b>${E.total(p)}</b><span class="pens">${[0, 1, 2, 3].map(k => `<span class="pen${k < p.pen ? ' on' : ''}"></span>`).join('')}</span></button>
-    <button class="ib" data-a="rules" aria-label="Regeln">${I.help}</button>
+    <button class="ib" data-a="tableview" data-pi="${pi}" aria-label="Alle Blöcke ansehen">${I.table}</button>
   </div>`;
 }
 function trayHTML(g, mode) {
@@ -1148,8 +1180,8 @@ function tableScreen(g) {
   return `<div class="screen">
     <div class="top"><button class="ib" data-a="menu" aria-label="Menü">${I.menu}</button>
       <div class="who">${avatar(g, g.active)}<div><div class="nm">${esc(A.name)} hat gewürfelt</div><div class="sub">Schritt 1 für alle anderen</div></div></div>
-      <button class="ib" data-a="rules" aria-label="Regeln">${I.help}</button></div>
-    ${trayHTML(g)}
+      <button class="ib" data-a="tableview" data-pi="${g.active}" aria-label="Alle Blöcke ansehen">${I.table}</button></div>
+    ${(ui.tvLastPi = g.active, '')}${trayHTML(g)}
     <div class="scroll" data-keep="table"><div class="cards">${cards}</div></div>
     ${bar('', right)}
   </div>`;
@@ -1198,9 +1230,56 @@ function rulesHTML() {
     <h3>Bedienung</h3><p>Nur leuchtende Felder lassen sich antippen. Mit dem Pfeil links unten nimmst du Kreuze im laufenden Zug zurück. Der Spielstand bleibt gespeichert, auch wenn du die App schließt.</p>
   </div>`;
 }
+/* ---------- Tischansicht: alle Blöcke nebeneinander ---------- */
+function tinyBlock(g, pi) {
+  const p = g.players[pi], closed = E.closedRows(g);
+  let cells = '';
+  for (let r = 0; r < 4; r++) {
+    cells += `<div class="tsh k${r}${closed[r] ? ' closed' : ''}">${E.rowScore(p, r)}</div>`;
+    const last = E.lastIdx(p, r);
+    for (let i = 0; i < 11; i++) {
+      const marked = p.marks[r][i];
+      let cls = `tc k${r}`;
+      if (marked) cls += ' done';
+      else if (i < last) cls += ' lost';
+      else if (closed[r]) cls += ' shut';
+      cells += `<div class="${cls}"><span class="n">${E.numAt(r, i)}</span>${marked ? crossSVG(r * 11 + i + pi * 7, false) : ''}</div>`;
+    }
+  }
+  const isAct = pi === g.active;
+  return `<div class="tb${isAct ? ' act' : ''}" role="button" tabindex="0" data-a="tvpick" data-pi="${pi}" aria-label="Block von ${esc(p.name)}">
+    <div class="tbh">${avatar(g, pi)}<span class="tn">${esc(p.name)}</span><span class="pens">${[0, 1, 2, 3].map(k => `<span class="pen${k < p.pen ? ' on' : ''}"></span>`).join('')}</span><b>${E.total(p)}</b></div>
+    <div class="ts">${cells}</div></div>`;
+}
+function tableViewHTML(g) {
+  const n = g.players.length;
+  const cols = n <= 2 ? n : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols);
+  const tf = n <= 2 ? 15 : n <= 4 ? 11.5 : 10.5;
+  const enter = performance.now() - (ui.tvT0 || 0) < 300 ? ' enter' : '';
+  const A = g.players[g.active];
+  return `<div class="tv${enter}">
+    <div class="top"><button class="ib" data-a="tvclose" aria-label="Zurück zum Blatt">${I.zoomin}</button>
+      <div class="who"><div><div class="nm">Tisch</div><div class="sub">${esc(A.name)} ist am Zug</div></div></div>
+      <button class="btn sec tvback" data-a="tvclose">Zurück</button></div>
+    ${trayHTML(g)}
+    <div class="tvgrid${cols >= 3 ? ' narrow' : ''}" style="--cols:${cols};--rows:${rows};--tf:${tf}px">${g.players.map((_, i) => tinyBlock(g, i)).join('')}</div>
+  </div>`;
+}
+const canTable = () => { const g = G(); return ui.screen === 'game' && g && g.phase !== 'over' && !ui.confirm && !ui.overlay; };
+function openTable(pi) {
+  if (!canTable() || ui.tableView) return;
+  ui.tableView = true; ui.tvT0 = performance.now();
+  ui.tvViewer = pi != null ? pi : G().active;
+  Sound.pick();
+  render();
+}
+function closeTable() { if (!ui.tableView) return; ui.tableView = false; Sound.pick(); render(); }
+
 function overlayHTML() {
   const g = G();
   let html = '';
+  if (ui.tableView && ui.screen === 'game' && g && g.phase !== 'over') html += tableViewHTML(g);
+  else ui.tableView = false;
   // Übergabe-Bildschirm
   if (ui.screen === 'game' && g && g.phase === 'roll' && !g.players[g.active].bot && humans(g).length > 1 && g.holder !== g.active && ui.handDismissed !== g.active + ':' + g.rolls) {
     const p = g.players[g.active];
@@ -1302,6 +1381,11 @@ app.addEventListener('click', e => {
     case 'menu': ui.overlay = 'menu'; return render();
     case 'scores': ui.overlay = 'scores'; return render();
     case 'peek': ui.overlay = { peek: pi }; return render();
+    case 'tableview': return openTable(pi);
+    case 'tvclose': return closeTable();
+    case 'tvpick':
+      if (pi === ui.tvViewer) return closeTable();
+      ui.overlay = { peek: pi }; return render();
     case 'closeov': ui.overlay = null; return render();
     case 'noconfirm': ui.confirm = null; return render();
     case 'yesconfirm': { const f = ui.onYes; ui.confirm = null; ui.onYes = null; if (f) f(); else render(); return; }
@@ -1364,6 +1448,23 @@ app.addEventListener('click', e => {
   }
 });
 document.addEventListener('gesturestart', e => e.preventDefault());
+let pinchDone = false;
+function onPinch(scale) {
+  if (pinchDone) return;
+  if (!ui.tableView && scale < 0.78 && canTable()) { pinchDone = true; openTable(ui.tvLastPi); }
+  else if (ui.tableView && scale > 1.3) { pinchDone = true; closeTable(); }
+}
+if ('ongesturechange' in window) {
+  // Safari (iPhone): eigene Zoom-Ereignisse mit Maßstab
+  document.addEventListener('gesturechange', e => { e.preventDefault(); onPinch(e.scale); });
+  document.addEventListener('gestureend', () => { pinchDone = false; });
+} else {
+  let d0 = 0;
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  document.addEventListener('touchstart', e => { if (e.touches.length === 2) { d0 = dist(e.touches); pinchDone = false; } }, { passive: true });
+  document.addEventListener('touchmove', e => { if (e.touches.length === 2 && d0) onPinch(dist(e.touches) / d0); }, { passive: true });
+  document.addEventListener('touchend', e => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
+}
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
 
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
