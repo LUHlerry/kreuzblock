@@ -39,7 +39,7 @@
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25);
 }}
 *{box-sizing:border-box;margin:0;padding:0}
-html{height:100%;touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html{height:100%;background-color:var(--paper);touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{position:fixed;inset:0;overflow:hidden;background-color:var(--paper);
   background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
   background-size:18px 18px;color:var(--ink);
@@ -317,6 +317,9 @@ h1{font-size:46px;font-weight:900;letter-spacing:-.02em;line-height:1}
 #app.shake{animation:shake .45s ease-out}
 @keyframes shake{15%{transform:translateX(-9px)}35%{transform:translateX(8px)}55%{transform:translateX(-5px)}75%{transform:translateX(3px)}}
 .confetti{position:fixed;inset:0;width:100%;height:100%;z-index:28;pointer-events:none}
+/* Home-Bildschirm-App: echte Bildschirmhöhe nutzen (iOS meldet sie dort um den Statusleisten-Bereich zu klein) */
+html.fit{height:var(--appH)}
+html.fit body,html.fit .tv,html.fit .hand,html.fit .ov,html.fit .closefx,html.fit .penfx,html.fit .confetti{bottom:auto;height:var(--appH)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -574,6 +577,19 @@ const BOTS = ['Willi', 'Klara', 'Ole', 'Frida', 'Bodo'];
 const LEVEL_NAME = { leicht: 'Leicht', normal: 'Normal', schwer: 'Schwer' };
 const app = document.getElementById('app');
 const toastEl = document.getElementById('toast');
+
+/* ---------- Bildschirmhöhe ---------- */
+function fitScreen() {
+  const root = document.documentElement;
+  if (window.navigator.standalone !== true) { root.classList.remove('fit'); return; }
+  const portrait = innerHeight >= innerWidth;
+  const sh = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  root.style.setProperty('--appH', Math.max(sh, innerHeight) + 'px');
+  root.classList.add('fit');
+}
+fitScreen();
+addEventListener('resize', fitScreen);
+addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
 
 /* ---------- Speicher ---------- */
 function loadStore() {
